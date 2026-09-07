@@ -2,18 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { api, type EvidencePublic, type MatchPublic, type SkillResponse } from "@/lib/api";
+import {
+  api,
+  type EvidencePublic,
+  type MatchPublic,
+  type OpportunityPublic,
+  type SkillResponse,
+} from "@/lib/api";
 import Link from "next/link";
 
 export default function DashboardPage() {
   const { token, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [profileCompletion, setProfileCompletion] = useState(0);
+  const [completionNextStep, setCompletionNextStep] = useState<string>("");
   const [skillsCount, setSkillsCount] = useState({ total: 0, verified: 0 });
   const [assessmentsCount, setAssessmentsCount] = useState({ total: 0, completed: 0 });
   const [opportunitiesCount, setOpportunitiesCount] = useState(0);
   const [skills, setSkills] = useState<EvidencePublic[]>([]);
   const [matches, setMatches] = useState<MatchPublic[]>([]);
+  const [opportunitiesMap, setOpportunitiesMap] = useState<Map<string, OpportunityPublic>>(new Map());
   const [skillDetails, setSkillDetails] = useState<Map<string, SkillResponse>>(new Map());
 
   useEffect(() => {
@@ -21,15 +29,34 @@ export default function DashboardPage() {
 
     const fetchData = async () => {
       try {
-        const [evidenceRes, opportunitiesRes] = await Promise.all([
-          api.evidence.list({ page_size: 100 }, token),
-          api.opportunities.list({ page: 1, page_size: 10 }),
+        const [
+          evidenceRes,
+          opportunitiesRes,
+          educationRes,
+          experiencesRes,
+          assessmentsRes,
+        ] = await Promise.all([
+          api.evidence.list({ page_size: 100 }, token).catch(() => ({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })),
+          api.opportunities.list({ page: 1, page_size: 10 }, token).catch(() => ({ items: [], total: 0, page: 1, page_size: 10, pages: 0 })),
+          api.education.mine({ page: 1, page_size: 10 }, token).catch(() => ({ items: [], total: 0, page: 1, page_size: 10, pages: 0 })),
+          api.experiences.mine({ page: 1, page_size: 10 }, token).catch(() => ({ items: [], total: 0, page: 1, page_size: 10, pages: 0 })),
+          api.assessments.list({ page_size: 100 }, token).catch(() => ({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })),
         ]);
 
-        const evidence = evidenceRes.items;
+        const evidence = evidenceRes.items || [];
+        const opps = opportunitiesRes.items || [];
+
+        // Build a lookup map of opportunities by ID so we can display title and org name
+        const oppMap = new Map<string, OpportunityPublic>();
+        for (const opp of opps) {
+          oppMap.set(opp.id, opp);
+        }
+        setOpportunitiesMap(oppMap);
+
+        // Calculate matches
         const matchItems = (
           await Promise.all(
-            opportunitiesRes.items.map((opportunity) =>
+            opps.map((opportunity) =>
               api.matches.calculate(opportunity.id, token).catch(() => null),
             ),
           )
@@ -42,9 +69,21 @@ export default function DashboardPage() {
         setOpportunitiesCount(matchItems.length);
 
         const totalSkills = new Set(evidence.map((e) => e.skill_id)).size;
-        const verifiedSkills = new Set(evidence.filter((e) => e.status === "verified").map((e) => e.skill_id)).size;
+        const verifiedSkills = new Set(
+          evidence.filter((e) => e.status === "verified").map((e) => e.skill_id),
+        ).size;
         setSkillsCount({ total: totalSkills, verified: verifiedSkills });
 
+        // Update assessments count
+        const completedAssessments = evidence.filter(
+          (e) => (e as any).evidence_type === "assessment" || (e as any).source_type === "assessment" || e.status === "verified",
+        ).length;
+        setAssessmentsCount({
+          total: assessmentsRes.total || assessmentsRes.items?.length || 0,
+          completed: completedAssessments,
+        });
+
+        // Fetch skill names
         const uniqueSkillIds = Array.from(new Set(evidence.map((e) => e.skill_id)));
         const skillDetailsMap = new Map<string, SkillResponse>();
         await Promise.all(
@@ -55,15 +94,66 @@ export default function DashboardPage() {
             } catch {
               /* ignore */
             }
-          })
+          }),
         );
         setSkillDetails(skillDetailsMap);
 
-        if (profile) {
-          const fields = [profile.full_name, profile.bio, profile.avatar_url];
-          const filled = fields.filter(Boolean).length;
-          setProfileCompletion(Math.round((filled / fields.length) * 100));
+        // Dynamic Profile Completion Calculation based on actual completeness
+        let completionScore = 0;
+        const nextSteps: string[] = [];
+
+        // 1. Full Name (15%)
+        if (profile?.full_name && profile.full_name.trim().length > 0) {
+          completionScore += 15;
+        } else {
+          nextSteps.push("Add full name (+15%)");
         }
+
+        // 2. Bio / Headline (15%)
+        if (profile?.bio && profile.bio.trim().length > 0) {
+          completionScore += 15;
+        } else {
+          nextSteps.push("Add bio / summary (+15%)");
+        }
+
+        // 3. Avatar / Photo (10%)
+        if (profile?.avatar_url && profile.avatar_url.trim().length > 0) {
+          completionScore += 10;
+        } else {
+          nextSteps.push("Upload profile photo (+10%)");
+        }
+
+        // 4. Skills (15% for first skill, +15% for multiple or verified skills)
+        if (totalSkills > 0) {
+          completionScore += 15;
+          if (totalSkills >= 2 || verifiedSkills >= 1) {
+            completionScore += 15;
+          } else {
+            nextSteps.push("Add more skills or verify (+15%)");
+          }
+        } else {
+          nextSteps.push("Add your first skill (+15%)");
+        }
+
+        // 5. Education (15%)
+        const eduItems = educationRes.items || [];
+        if (eduItems.length > 0) {
+          completionScore += 15;
+        } else {
+          nextSteps.push("Add education history (+15%)");
+        }
+
+        // 6. Experience (15%)
+        const expItems = experiencesRes.items || [];
+        if (expItems.length > 0) {
+          completionScore += 15;
+        } else {
+          nextSteps.push("Add work experience (+15%)");
+        }
+
+        const finalScore = Math.min(100, completionScore);
+        setProfileCompletion(finalScore);
+        setCompletionNextStep(nextSteps[0] || "Profile complete! 🎉");
       } catch {
         /* ignore */
       } finally {
@@ -90,16 +180,31 @@ export default function DashboardPage() {
 
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <p className="text-sm text-gray-500">Profile Completion</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">Profile Completion</p>
+            <Link
+              href="/dashboard/profile"
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
+            >
+              Edit Profile
+            </Link>
+          </div>
           <h2 className="mt-2 text-3xl font-bold text-indigo-600">
             {loading ? "0%" : `${profileCompletion}%`}
           </h2>
           <div className="mt-4 h-2 rounded-full bg-gray-100">
             <div
-              className="h-2 rounded-full bg-indigo-600 transition-all"
+              className="h-2 rounded-full bg-indigo-600 transition-all duration-500"
               style={{ width: loading ? "0%" : `${profileCompletion}%` }}
             />
           </div>
+          <p className="mt-2 text-xs text-gray-500 truncate" title={completionNextStep}>
+            {loading
+              ? "Calculating..."
+              : profileCompletion === 100
+                ? "All set! Your profile is 100% complete. 🎉"
+                : `Next: ${completionNextStep}`}
+          </p>
         </div>
 
         <div className="rounded-xl border bg-white p-6 shadow-sm">
@@ -197,7 +302,7 @@ export default function DashboardPage() {
           </div>
           <Link
             href="/dashboard/opportunities"
-            className="text-sm font-medium text-indigo-600"
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
           >
             View All
           </Link>
@@ -209,25 +314,59 @@ export default function DashboardPage() {
               <p>Loading opportunities...</p>
             </div>
           ) : matches.length === 0 ? (
-            <div className="col-span-3 flex items-center justify-center py-8 text-gray-500">
-              <p>No opportunities available</p>
+            <div className="col-span-3 flex flex-col items-center justify-center rounded-lg border border-dashed py-8 text-center text-gray-500">
+              <p className="text-sm font-medium text-gray-700">No recommended opportunities yet</p>
+              <p className="mt-1 text-xs text-gray-500">Add more skills and evidence to get matched with career opportunities.</p>
+              <Link
+                href="/dashboard/opportunities"
+                className="mt-3 text-xs font-semibold text-indigo-600 hover:underline"
+              >
+                Browse All Opportunities →
+              </Link>
             </div>
           ) : (
-            matches.slice(0, 3).map((match) => (
-              <div key={match.id} className="rounded-lg border p-5 transition hover:border-indigo-300 hover:shadow-sm">
-                <h3 className="font-semibold text-gray-900">Opportunity #{match.opportunity_id}</h3>
-                <p className="mt-1 text-sm text-gray-500">Match Score: {match.overall_score}%</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-sm font-medium text-green-600">{match.overall_score}% Match</span>
-                  <Link
-                    href={`/dashboard/opportunities/${match.opportunity_id}`}
-                    className="text-sm font-medium text-indigo-600"
-                  >
-                    View
-                  </Link>
+            matches.slice(0, 3).map((match) => {
+              const opp = opportunitiesMap.get(match.opportunity_id);
+              const title = opp?.title || (match as any).opportunity_title || "Career Opportunity";
+              const orgName = opp?.organization_name || "Company";
+              const location = opp?.location ? ` • ${opp.location}` : opp?.is_remote ? " • Remote" : "";
+              const oppType = opp?.opportunity_type ? opp.opportunity_type.replace("_", " ") : null;
+
+              return (
+                <div
+                  key={match.id}
+                  className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 transition hover:border-indigo-300 hover:shadow-md"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-gray-900 line-clamp-1 text-base" title={title}>
+                        {title}
+                      </h3>
+                      {oppType && (
+                        <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 capitalize">
+                          {oppType}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500 line-clamp-1">
+                      {orgName}{location}
+                    </p>
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-3">
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      {Math.round(match.overall_score)}% Match
+                    </span>
+                    <Link
+                      href={`/dashboard/opportunities/${match.opportunity_id}`}
+                      className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                    >
+                      View Details →
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

@@ -57,10 +57,10 @@ export default function MatchingPage() {
 
   // Fetch opportunities to populate the job filter and match against.
   const oppFetcher = useMemo(
-    () => () => api.opportunities.list({ page_size: 50 }),
-    [],
+    () => () => api.opportunities.list({ page_size: 50 }, token),
+    [token],
   );
-  const { data: oppData, loading, error } = useFetch(oppFetcher, []);
+  const { data: oppData, loading, error } = useFetch(oppFetcher, [token]);
   const opportunities = useMemo<OpportunityPublic[]>(
     () => oppData?.items ?? [],
     [oppData],

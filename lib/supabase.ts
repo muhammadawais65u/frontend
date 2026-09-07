@@ -2,8 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 let client: SupabaseClient | null = null;
 
@@ -12,7 +12,7 @@ if (typeof window !== "undefined" && supabaseUrl && supabaseAnonKey) {
 } else if (typeof window !== "undefined") {
   // eslint-disable-next-line no-console
   console.warn(
-    "Supabase URL/Anon Key missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local",
+    "Supabase URL/Anon Key missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY) in .env.local",
   );
 }
 
@@ -27,6 +27,10 @@ const stub: Pick<SupabaseClient, "auth"> = {
       error: { message: "Supabase not configured" } as any,
     }),
     signOut: async () => ({ error: null as any }),
+    getSession: async () => ({ data: { session: null }, error: null as any }),
+    onAuthStateChange: () => ({
+      data: { subscription: { unsubscribe: () => {} } },
+    } as any),
   } as any,
 };
 

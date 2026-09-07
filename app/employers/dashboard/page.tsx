@@ -64,10 +64,10 @@ export default function EmployerDashboard() {
   // Fetch recent opportunities.
   const oppFetcher = useMemo(
     () => () =>
-      api.opportunities.list({ page_size: 5 }),
-    [],
+      api.opportunities.list({ page_size: 5 }, token),
+    [token],
   );
-  const { data: oppData } = useFetch(oppFetcher, []);
+  const { data: oppData } = useFetch(oppFetcher, [token]);
   const jobs: OpportunityPublic[] = oppData?.items || [];
 
   // Fetch recent applications.

@@ -154,17 +154,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Listen for Supabase auth state changes (fires on token refresh / sign out)
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session?.access_token) {
-          setStoredToken(session.access_token);
-          setToken(session.access_token);
+    try {
+      if (typeof supabase.auth.onAuthStateChange !== 'function') {
+        // Stub or incompatible version - skip auth state listening
+        return;
+      }
+      
+      const { data: sub } = supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          if (session?.access_token) {
+            setStoredToken(session.access_token);
+            setToken(session.access_token);
+          } else {
+            setStoredToken(null);
+            setToken(null);
+            setProfile(null);
+          }
+        },
+      );
+      return () => {
+        if (sub?.subscription?.unsubscribe) {
+          sub.subscription.unsubscribe();
         }
-      },
-    );
-    return () => {
-      sub.subscription.unsubscribe();
-    };
+      };
+    } catch (error) {
+      // If auth state change fails, just continue without it
+      console.warn('Auth state change listener failed:', error);
+    }
   }, []);
 
   const signIn = useCallback((newToken: string) => {
