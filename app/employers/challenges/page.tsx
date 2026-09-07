@@ -150,7 +150,7 @@ export default function ChallengesPage() {
         participants={participants}
         completed={completedCount}
       />
-      {showCreateModal && (
+      {showCreateModal && token && (
         <CreateChallengeModal
           token={token}
           onClose={() => setShowCreateModal(false)}

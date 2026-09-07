@@ -84,7 +84,7 @@ export default function EvidencePage() {
   useEffect(() => {
     if (!token) return;
     if (skillMap[targetSkillId]) return; // already have it
-    api.skills.get(targetSkillId, token).then((res) => {
+    api.skills.get(targetSkillId).then((res) => {
       setSkillMap((prev) => ({ ...prev, [targetSkillId]: res.name }));
     }).catch(() => {
       // ignore errors; name will remain missing

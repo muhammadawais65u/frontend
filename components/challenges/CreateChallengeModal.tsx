@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Loader2 } from "lucide-react";
-import { api, type SkillResponse, type ChallengeCreate } from "@/lib/api";
+import { api, type SkillResponse, type ChallengeCreate, type AssessmentPublic } from "@/lib/api";
 
 interface CreateChallengeModalProps {
   token: string;

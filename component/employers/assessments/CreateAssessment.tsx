@@ -144,7 +144,7 @@ export default function CreateAssessment({ onClose, onCreated }: CreateAssessmen
     const questionsToSave = qList.length > 0 ? qList : customQuestions;
     return {
       title: form.title.trim(),
-      description: form.description.trim() || undefined,
+      description: form.description.trim() || null,
       skill_id: form.skills[0],
       role_id: null,
       difficulty: form.difficulty === "Easy" ? "beginner" : form.difficulty === "Medium" ? "intermediate" : "advanced",
